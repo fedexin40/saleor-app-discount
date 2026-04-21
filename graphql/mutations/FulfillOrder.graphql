@@ -1,0 +1,12 @@
+  mutation fulFillOrder($orderId: ID!, $input: OrderFulfillInput!) {
+    orderFulfill(order: $orderId, input: $input) {
+      errors {
+        code
+        message
+        field
+      }
+      fulfillments {
+        id
+      }
+    }
+  }

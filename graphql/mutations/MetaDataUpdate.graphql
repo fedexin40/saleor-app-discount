@@ -1,0 +1,9 @@
+  mutation MetadataUpdate($id: ID!, $input: [MetadataInput!]!)  {
+    updateMetadata(id: $id, input: $input) {
+      errors {
+        code
+        message
+        field
+      }
+    }
+  }

@@ -1,0 +1,45 @@
+query GetOrders {
+  orders(first: 100, sortBy: {direction: DESC, field: CREATION_DATE}) {
+    edges {
+      node {
+        id
+        channel {
+          warehouses {
+            id
+            companyName
+            address {
+              postalCode
+              streetAddress1
+              streetAddress2
+              phone
+              city
+              country {
+                code
+              }
+              countryArea
+            }
+          }
+        }
+        created
+        fulfillments {
+          created
+          fulfillmentOrder
+          id
+        }
+        number
+        carrier_name : metafields(keys: "carrier_name")
+        lines {
+          id
+          variantName
+          productName
+          quantity
+          totalPrice {
+            gross {
+              amount
+            }
+          }
+        }
+      }
+    }
+  }
+}
