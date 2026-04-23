@@ -80,6 +80,7 @@ const checkoutUpdatedHandler: NextApiHandler = async (req, res) => {
         };
       }),
     }
+    console.log(result)
     console.log('Event handled')
     return res.status(200).json(result);
   })(req, res);
