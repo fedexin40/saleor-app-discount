@@ -7,7 +7,7 @@
     "build": "pnpm generate && next build",
     "start": "next start --port=4050",
     "lint": "next lint",
-    "fetch-schema": "curl https://raw.githubusercontent.com/saleor/saleor/3.22/saleor/graphql/schema.graphql > graphql/schema.graphql",
+    "fetch-schema": "curl https://raw.githubusercontent.com/saleor/saleor/3.23/saleor/graphql/schema.graphql > graphql/schema.graphql",
     "generate": "graphql-codegen",
     "test": "vitest"
   },

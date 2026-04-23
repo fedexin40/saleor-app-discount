@@ -1,8 +1,6 @@
 import { NextApiHandler } from "next";
 import { gql } from "urql";
-import { createClient } from "../../../lib/create-graphq-client";
 import { saleorApp } from "../../../saleor-app";
-import { OrdersByEmailDocument } from "../../../../generated/graphql";
 import { SaleorSyncWebhook } from "@saleor/app-sdk/handlers/next";
 import { TaxableObjectLine } from "../../../../generated/graphql";
 
@@ -12,79 +10,25 @@ const CheckoutCalculateTaxesSubscription = gql`
       ... on CalculateTaxes {
         taxBase {
           lines {
-            variantName
-            sourceLine {
-              ... on CheckoutLine {
-                id
-                quantity
-                undiscountedUnitPrice {
-                  amount
-                }
-                undiscountedTotalPrice {
-                  amount
-                }
-                variant {
-                  pricing {
-                    price {
-                      gross {
-                        amount
-                        currency
-                      }
-                    }
-                  }
-                }
-              }
+            totalPrice {
+              amount
             }
           }
           shippingPrice {
             amount
           }
-          sourceObject {
-            ... on Checkout {
-              id
-              email
+          discounts {
+            amount {
+              amount
             }
+            name
+            type
           }
         }
       }
     }
   }
 `;
-
-// =========================
-// Queries / Mutations against Saleor API
-// =========================
-const OrdersByEmail = gql`
-  query OrdersByEmail($email: String!) {
-    orders(first: 1, where: { userEmail: { eq: $email } }) {
-      edges {
-        node {
-          id
-        }
-      }
-    }
-  }
-`;
-
-const CheckoutLinesUpdate = gql`
-  mutation CheckoutLinesUpdate($checkoutId: ID!, $lines: [CheckoutLineUpdateInput!]!) {
-    checkoutLinesUpdate(id: $checkoutId, lines: $lines) {
-      checkout {
-        id
-      }
-      errors {
-        field
-        message
-        code
-      }
-    }
-  }
-`;
-
-function applyPercentageDiscount(amount: number, percent: number) {
-  const discounted = amount * (1 - percent / 100);
-  return Number(discounted.toFixed(2));
-}
 
 export const checkoutUpdatedWebhook = new SaleorSyncWebhook<any>({
   name: "Checkout updated",
@@ -104,51 +48,22 @@ const checkoutUpdatedHandler: NextApiHandler = async (req, res) => {
 
   return checkoutUpdatedWebhook.createHandler(async (req, res, ctx) => {
     console.log("webhook received");
-    let discountPercent = 0
     let freeShipping = false
 
     const { payload, authData, event } = ctx;
 
     const taxBase = payload?.taxBase;
-
-    const client = createClient(authData.saleorApiUrl, async () => ({
-      token: authData.token,
-    }));
+    const discounts = taxBase.discounts || [];
 
     if (!taxBase) {
       return res.status(200).end();
     }
 
-    const checkoutTotal =
-      taxBase.lines.reduce((acc: any, line: any) => {
-        const amount = line.sourceLine.variant.pricing.price.gross.amount ?? 0;
-        return acc + amount * line.sourceLine.quantity;
-      }, 0) ?? 0;
+    const discountsTotal = discounts.reduce((acc : any, x: any) => acc + x.amount?.amount || 0, 0);
+    const checkoutTotal = taxBase.lines.reduce((acc : any, line: any) => acc + Number(line.totalPrice?.amount || 0), 0);
+    const checkoutTotalWithDiscount = checkoutTotal - discountsTotal
 
-    const email = taxBase.sourceObject.email?.trim().toLowerCase();
-    // El email puede venir vacío al inicio del checkout
-    if (email) {
-      const ordersbyEmail = await client.query(OrdersByEmailDocument, {
-        email: email
-      })
-
-      if (ordersbyEmail.data?.orders?.edges.length == 0 ){
-        console.log(`El email ${email} no tiene órdenes. Es primera compra.`);
-        discountPercent = 10
-      }
-    } else {
-      discountPercent = 10
-    }
-
-    if (checkoutTotal >= 5000 && checkoutTotal < 10000){
-      discountPercent = 15
-    }
-    else if (checkoutTotal >= 10000) {
-      discountPercent = 20
-    }
-
-    const checkoutTotalDiscount = applyPercentageDiscount(checkoutTotal || 0,discountPercent)
-    if ( checkoutTotalDiscount > 1000){
+    if ( checkoutTotalWithDiscount > 1000){
       freeShipping = true
     }
 
@@ -157,18 +72,11 @@ const checkoutUpdatedHandler: NextApiHandler = async (req, res) => {
       shipping_price_gross_amount: freeShipping ? 0 : taxBase.shippingPrice.amount,
       shipping_price_net_amount: freeShipping ? 0 : taxBase.shippingPrice.amount,
       lines: taxBase.lines.map((line: TaxableObjectLine) => {
-        const undiscounted = line.sourceLine.variant ? line.sourceLine.variant.pricing?.price?.gross.amount : 0
-        const expectedPrice = applyPercentageDiscount(
-          undiscounted || 0,
-          discountPercent
-        )
-        const gross = expectedPrice || 0;
-        const net = gross * 0.84;
-
+        const gross = discountsTotal > 0 ? line.totalPrice.amount - discountsTotal * (line.totalPrice.amount/checkoutTotal) : line.totalPrice.amount
         return {
           tax_rate: "16",
-          total_gross_amount: gross * line.sourceLine.quantity,
-          total_net_amount: net * line.sourceLine.quantity,
+          total_gross_amount: gross,
+          total_net_amount: gross * 0.84,
         };
       }),
     }
